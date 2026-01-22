@@ -57,7 +57,7 @@ USDC = ERC20Token(
 #     decimals=18,
 # )
 # COW_ETH = ERC20Token(
-#     name="CoW psewdo ETH",
+#     name="CoW pseudo ETH",
 #     symbol="cowETH",
 #     chain=CHAIN,
 #     address=to_checksum_address("0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
