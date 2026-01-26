@@ -42,12 +42,3 @@ jobs:
           file: Dockerfile
           context: .
           tags: ghcr.io/liquorice-hq/open-intent-gate:${{ github.REF_NAME }}-${{ github.RUN_NUMBER }}
-
-  update-versions:
-    needs: [build-and-push]
-    uses: Liquorice-HQ/infrastructure/.github/workflows/update-version.yml@main
-    with:
-      env: all
-      parameter_name: open_intent_gate_version
-      parameter_value: ${{ github.REF_NAME }}-${{ github.RUN_NUMBER }}
-    secrets: inherit
