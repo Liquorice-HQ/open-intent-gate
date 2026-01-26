@@ -12,7 +12,7 @@ services:
       - "autoheal=true"
 
   autoheal:
-    image: willfarrell/autoheal:latest
+    image: docker.io/willfarrell/autoheal:latest
     restart: unless-stopped
     environment:
       - AUTOHEAL_CONTAINER_LABEL=autoheal
@@ -23,7 +23,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
 
   prometheus:
-    image: prom/prometheus
+    image: docker.io/prom/prometheus:main
     container_name: prometheus
     configs:
       - source: prometheus_config
