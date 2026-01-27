@@ -18,7 +18,7 @@ from app.protocols.liquorice.signer import Web3Signer
 # Premium multiplier for stablecoin's default rate to force the quoter
 # to always quote slightly above 1:1 for testing purposes.
 # In real-world usage this should be adjusted based on market conditions.
-QUOTE_PREMIUM = Decimal("1.003")
+QUOTE_PREMIUM = Decimal("1.0")
 
 log = getLogger(__name__)
 
