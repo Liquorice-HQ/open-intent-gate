@@ -109,7 +109,6 @@ class LiquoriceQuoter:
                             send_quote_token_amount / QUOTE_PREMIUM
                         )
 
-                    zero_addr = to_checksum_address(ZERO_ADDRESS)
                     quote_lvl = QuoteLevelLite(
                         baseToken=base_token.address,
                         quoteToken=quote_token.address,
