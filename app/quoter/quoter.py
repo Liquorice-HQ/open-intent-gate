@@ -86,8 +86,9 @@ class LiquoriceQuoter:
                     assert isinstance(rfq.baseTokenAmount, int)
                     assert rfq.baseTokenAmount > 0
                     receive_base_token_amount = base_token.raw_to_decimal(rfq.baseTokenAmount)
+                    market_quote_token_amount = receive_base_token_amount * QUOTE_PREMIUM
                     send_quote_token_amount = min(
-                        receive_base_token_amount * QUOTE_PREMIUM, quote_token.balance
+                        market_quote_token_amount, quote_token.balance
                     )
                     send_quote_token_raw_amount = quote_token.decimal_to_raw(
                         send_quote_token_amount
@@ -100,10 +101,18 @@ class LiquoriceQuoter:
                         )
                         metrics.rfqs_total.labels(**metrics_labels, status="LOW_QT_BALANCE").inc()
                         continue
+
+                    # Scale base token amount if we are limited by liquidity
+                    quoted_base_token_raw_amount = int(rfq.baseTokenAmount)
+                    if send_quote_token_amount < market_quote_token_amount:
+                        # Re-calculate how much base token corresponds to the reduced quote amount
+                        scaled_base_amount = send_quote_token_amount / QUOTE_PREMIUM
+                        quoted_base_token_raw_amount = base_token.decimal_to_raw(scaled_base_amount)
+
                     quote_lvl = QuoteLevelLite(
                         baseToken=base_token.address,
                         quoteToken=quote_token.address,
-                        baseTokenAmount=int(rfq.baseTokenAmount),
+                        baseTokenAmount=quoted_base_token_raw_amount,
                         quoteTokenAmount=send_quote_token_raw_amount,
                         expiry=rfq.expiry + 30,
                         settlementContract=to_checksum_address(ZERO_ADDRESS),
