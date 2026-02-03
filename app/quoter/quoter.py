@@ -85,11 +85,10 @@ class LiquoriceQuoter:
                     assert path, "No path found for RFQ"
                     assert isinstance(rfq.baseTokenAmount, int)
                     assert rfq.baseTokenAmount > 0
-                    receive_base_token_amount = base_token.raw_to_decimal(rfq.baseTokenAmount)
-                    market_quote_token_amount = receive_base_token_amount * QUOTE_PREMIUM
-                    send_quote_token_amount = min(
-                        market_quote_token_amount, quote_token.balance
+                    market_quote_token_amount = (
+                        base_token.raw_to_decimal(rfq.baseTokenAmount) * QUOTE_PREMIUM
                     )
+                    send_quote_token_amount = min(market_quote_token_amount, quote_token.balance)
                     send_quote_token_raw_amount = quote_token.decimal_to_raw(
                         send_quote_token_amount
                     )
@@ -106,21 +105,21 @@ class LiquoriceQuoter:
                     quoted_base_token_raw_amount = int(rfq.baseTokenAmount)
                     if send_quote_token_amount < market_quote_token_amount:
                         # Re-calculate how much base token corresponds to the reduced quote amount
-                        scaled_base_amount = send_quote_token_amount / QUOTE_PREMIUM
-                        quoted_base_token_raw_amount = base_token.decimal_to_raw(scaled_base_amount)
+                        quoted_base_token_raw_amount = base_token.decimal_to_raw(
+                            send_quote_token_amount / QUOTE_PREMIUM
+                        )
 
+                    zero_addr = to_checksum_address(ZERO_ADDRESS)
                     quote_lvl = QuoteLevelLite(
                         baseToken=base_token.address,
                         quoteToken=quote_token.address,
                         baseTokenAmount=quoted_base_token_raw_amount,
                         quoteTokenAmount=send_quote_token_raw_amount,
                         expiry=rfq.expiry + 30,
-                        settlementContract=to_checksum_address(ZERO_ADDRESS),
+                        settlementContract=zero_addr,
                         minQuoteTokenAmount=1,
-                        signer=to_checksum_address(
-                            ZERO_ADDRESS
-                        ),  # Placeholder, will be set later by Web3 Signer
-                        recipient=to_checksum_address(ZERO_ADDRESS),  # Placeholder
+                        signer=zero_addr,  # Placeholder, will be set later by Web3 Signer
+                        recipient=zero_addr,  # Placeholder
                         signature=HexBytes("00" * 65),  # Placeholder
                     )
                     non_signed_quote = RFQQuoteMessage(rfqId=rfq.rfqId, levels=[quote_lvl])
