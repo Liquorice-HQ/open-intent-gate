@@ -116,10 +116,12 @@ class LiquoriceQuoter:
                         baseTokenAmount=quoted_base_token_raw_amount,
                         quoteTokenAmount=send_quote_token_raw_amount,
                         expiry=rfq.expiry + 30,
-                        settlementContract=zero_addr,
+                        settlementContract=to_checksum_address(ZERO_ADDRESS),
                         minQuoteTokenAmount=1,
-                        signer=zero_addr,  # Placeholder, will be set later by Web3 Signer
-                        recipient=zero_addr,  # Placeholder
+                        signer=to_checksum_address(
+                            ZERO_ADDRESS
+                        ),  # Placeholder, will be set later by Web3 Signer
+                        recipient=to_checksum_address(ZERO_ADDRESS),  # Placeholder
                         signature=HexBytes("00" * 65),  # Placeholder
                     )
                     non_signed_quote = RFQQuoteMessage(rfqId=rfq.rfqId, levels=[quote_lvl])
