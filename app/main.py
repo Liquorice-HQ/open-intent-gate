@@ -6,6 +6,7 @@ for handling NMF protocol connections.
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -50,7 +51,15 @@ async def lifespan(_app: FastAPI):
         liq_client.run()
     )  # long-lived coroutine for Liquorice client
     log.info("Starting Quoter service...")
-    quoter = LiquoriceQuoter(liq_client.out_rfqs, liq_client.in_quotes, markets, liquorice_signer)
+    price_level_publish_interval = float(os.getenv("PRICE_LEVEL_PUBLISH_INTERVAL", "1.0"))
+    log.info("Price level publish interval: %s seconds", price_level_publish_interval)
+    quoter = LiquoriceQuoter(
+        liq_client.out_rfqs,
+        liq_client.in_quotes,
+        markets,
+        liquorice_signer,
+        price_level_publish_interval,
+    )
     quoter_task = asyncio.create_task(quoter.run())  # long-lived coroutine for Quoter
     log.info("Intent gateway started successfully")
     try:

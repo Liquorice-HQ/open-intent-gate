@@ -51,6 +51,7 @@ class LiquoriceQuoter:
     out_quotes: asyncio.Queue[PriceLevelsMessage | RFQQuoteMessage]
     markets: MarketState
     signer: Web3Signer
+    price_level_publish_interval: float
 
     def __init__(
         self,
@@ -58,11 +59,13 @@ class LiquoriceQuoter:
         out_quotes: asyncio.Queue[PriceLevelsMessage | RFQQuoteMessage],
         markets: MarketState,
         signer: Web3Signer,
+        price_level_publish_interval: float = 1.0,
     ) -> None:
         self.in_rfqs = in_rfqs
         self.out_quotes = out_quotes
         self.markets = markets
         self.signer = signer
+        self.price_level_publish_interval = price_level_publish_interval
 
     async def rfq_stream(self) -> AsyncIterator[RFQMessage]:
         """Yield RFQs from the inbound queue."""
@@ -303,7 +306,7 @@ class LiquoriceQuoter:
             except Exception:  # pylint: disable=broad-exception-caught
                 log.exception("Unexpected error in publish_price_levels")
 
-            await asyncio.sleep(1)
+            await asyncio.sleep(self.price_level_publish_interval)
 
     async def run(self) -> None:
         """Start RFQ processing and price level publishing."""
