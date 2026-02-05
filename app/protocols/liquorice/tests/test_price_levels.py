@@ -66,6 +66,10 @@ async def test_quoter_publish_price_levels():
     # Should return a list of tokens
     markets_mock.get_tokens_by_chain_id.return_value = iter([usdc_token, usdt_token])
 
+    # Mock shortest_path to return a valid path between USDT (base) and USDC (quote)
+    markets_mock.shortest_path.return_value = [usdt_token, usdc_token]
+    markets_mock.graph.get_edge_data.return_value = {"weight": 1.0}
+
     # Patch asyncio.sleep to break the loop or run once
     # We allow one iteration then raise CancelledError to stop the loop cleanly
     with patch("asyncio.sleep", side_effect=asyncio.CancelledError):
@@ -85,5 +89,5 @@ async def test_quoter_publish_price_levels():
 
     assert msg.baseToken == "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"
     assert msg.quoteToken == "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
-    assert msg.levels[0].price == "1.0"
+    assert msg.levels[0].price == "1.00"
     assert msg.levels[0].amount == "5.0"
