@@ -112,13 +112,13 @@ class LiquoriceQuoter:
             log.info("No path found for RFQ %s", ctx.rfq.rfqId)
             metrics.rfqs_total.labels(**ctx.metrics_labels, status="NO_PATH").inc()
             return None
-        
+
         if ctx.rfq.baseTokenAmount is not None:
             base_raw_amount = int(ctx.rfq.baseTokenAmount)
             if base_raw_amount <= 0:
                 metrics.rfqs_total.labels(**ctx.metrics_labels, status="BAD_AMOUNT").inc()
                 return None
-            
+
             base_decimal = ctx.base_token.raw_to_decimal(base_raw_amount)
             quote_decimal = base_decimal * ctx.price
             if quote_decimal > ctx.quote_token.balance:
@@ -129,15 +129,15 @@ class LiquoriceQuoter:
                 )
                 metrics.rfqs_total.labels(**ctx.metrics_labels, status="LOW_QT_BALANCE").inc()
                 return None
-            
+
             quote_raw_amount = ctx.quote_token.decimal_to_raw(quote_decimal)
             return (base_raw_amount, quote_raw_amount)
-        
+
         quote_raw_amount = int(ctx.rfq.quoteTokenAmount or 0)
         if quote_raw_amount <= 0:
             metrics.rfqs_total.labels(**ctx.metrics_labels, status="BAD_AMOUNT").inc()
             return None
-        
+
         quote_decimal = ctx.quote_token.raw_to_decimal(quote_raw_amount)
         if quote_decimal > ctx.quote_token.balance:
             log.info(
@@ -147,7 +147,7 @@ class LiquoriceQuoter:
             )
             metrics.rfqs_total.labels(**ctx.metrics_labels, status="LOW_QT_BALANCE").inc()
             return None
-        
+
         base_decimal = quote_decimal / ctx.price
         base_raw_amount = ctx.base_token.decimal_to_raw(base_decimal)
         return (base_raw_amount, quote_raw_amount)
