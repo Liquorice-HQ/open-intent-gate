@@ -1,6 +1,7 @@
 """A service to handle RFQs and send quotes"""
 
 import asyncio
+import os
 from contextlib import suppress
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
@@ -59,13 +60,26 @@ class LiquoriceQuoter:
         out_quotes: asyncio.Queue[PriceLevelsMessage | RFQQuoteMessage],
         markets: MarketState,
         signer: Web3Signer,
-        price_level_publish_interval: float = 1.0,
     ) -> None:
         self.in_rfqs = in_rfqs
         self.out_quotes = out_quotes
         self.markets = markets
         self.signer = signer
-        self.price_level_publish_interval = price_level_publish_interval
+        self.price_level_publish_interval = self._get_price_level_publish_interval()
+
+    @staticmethod
+    def _get_price_level_publish_interval() -> float:
+        try:
+            interval = float(os.getenv("PRICE_LEVEL_PUBLISH_INTERVAL", "1.0"))
+        except ValueError:
+            log.warning(
+                "Invalid PRICE_LEVEL_PUBLISH_INTERVAL value: %s. Using default of 1.0 seconds.",
+                os.getenv("PRICE_LEVEL_PUBLISH_INTERVAL"),
+            )
+            interval = 1.0
+
+        log.info("Price level publish interval: %s seconds", interval)
+        return interval
 
     async def rfq_stream(self) -> AsyncIterator[RFQMessage]:
         """Yield RFQs from the inbound queue."""
