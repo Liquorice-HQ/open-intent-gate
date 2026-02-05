@@ -28,8 +28,6 @@ class LiquoriceClient:
     in_quotes: asyncio.Queue[PriceLevelsMessage | RFQQuoteMessage]
 
     def __init__(self, cfg_maker: MakerConfig) -> None:
-        self.out_rfqs = asyncio.Queue()
-        self.in_quotes = asyncio.Queue()
         self.uri = LIQUORICE_WS_URL
         self.headers = {
             "maker": cfg_maker.maker,
