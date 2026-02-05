@@ -113,6 +113,10 @@ class LiquoriceQuoter:
             metrics.rfqs_total.labels(**ctx.metrics_labels, status="NO_PATH").inc()
             return None
 
+        base_raw_amount: int | None = None
+        quote_raw_amount: int | None = None
+        quote_decimal: Decimal | None = None
+
         if ctx.rfq.baseTokenAmount is not None:
             base_raw_amount = int(ctx.rfq.baseTokenAmount)
             if base_raw_amount <= 0:
@@ -121,25 +125,15 @@ class LiquoriceQuoter:
 
             base_decimal = ctx.base_token.raw_to_decimal(base_raw_amount)
             quote_decimal = base_decimal * ctx.price
-            if quote_decimal > ctx.quote_token.balance:
-                log.info(
-                    "No quote tokens available for RFQ %s: %s",
-                    ctx.rfq.rfqId,
-                    ctx.rfq.quoteToken,
-                )
-                metrics.rfqs_total.labels(**ctx.metrics_labels, status="LOW_QT_BALANCE").inc()
+        else:
+            quote_raw_amount = int(ctx.rfq.quoteTokenAmount or 0)
+            if quote_raw_amount <= 0:
+                metrics.rfqs_total.labels(**ctx.metrics_labels, status="BAD_AMOUNT").inc()
                 return None
 
-            quote_raw_amount = ctx.quote_token.decimal_to_raw(quote_decimal)
-            return (base_raw_amount, quote_raw_amount)
+            quote_decimal = ctx.quote_token.raw_to_decimal(quote_raw_amount)
 
-        quote_raw_amount = int(ctx.rfq.quoteTokenAmount or 0)
-        if quote_raw_amount <= 0:
-            metrics.rfqs_total.labels(**ctx.metrics_labels, status="BAD_AMOUNT").inc()
-            return None
-
-        quote_decimal = ctx.quote_token.raw_to_decimal(quote_raw_amount)
-        if quote_decimal > ctx.quote_token.balance:
+        if quote_decimal is None or quote_decimal > ctx.quote_token.balance:
             log.info(
                 "No quote tokens available for RFQ %s: %s",
                 ctx.rfq.rfqId,
@@ -148,8 +142,13 @@ class LiquoriceQuoter:
             metrics.rfqs_total.labels(**ctx.metrics_labels, status="LOW_QT_BALANCE").inc()
             return None
 
-        base_decimal = quote_decimal / ctx.price
-        base_raw_amount = ctx.base_token.decimal_to_raw(base_decimal)
+        if base_raw_amount is None:
+            base_decimal = quote_decimal / ctx.price
+            base_raw_amount = ctx.base_token.decimal_to_raw(base_decimal)
+
+        if quote_raw_amount is None:
+            quote_raw_amount = ctx.quote_token.decimal_to_raw(quote_decimal)
+
         return (base_raw_amount, quote_raw_amount)
 
     def _build_signed_quote(
