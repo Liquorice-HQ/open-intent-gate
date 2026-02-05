@@ -63,16 +63,16 @@ class LiquoriceClient:
         while True:
             msg = await self.in_quotes.get()
             if isinstance(msg, RFQQuoteMessage):
-                msg_type = MessageType.RFQ_QUOTE
+                raw_msg = LiquoriceEnvelope(
+                    message=msg, messageType=MessageType.RFQ_QUOTE
+                ).model_dump_json(exclude_none=True)
             elif isinstance(msg, PriceLevelsMessage):
-                msg_type = MessageType.PRICE_LEVELS
+                raw_msg = LiquoriceEnvelope(
+                    message=msg, messageType=MessageType.PRICE_LEVELS
+                ).model_dump_json(exclude_none=True)
             else:
                 log.error("Unexpected message type in out_quotes: %s", type(msg))
                 continue
-
-            raw_msg = LiquoriceEnvelope(message=msg, messageType=msg_type).model_dump_json(
-                exclude_none=True
-            )
             await ws.send(raw_msg)
             log.debug("Sent: %s", raw_msg)
 

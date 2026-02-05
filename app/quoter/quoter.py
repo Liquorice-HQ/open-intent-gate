@@ -1,6 +1,7 @@
 """A service to handle RFQs and send quotes"""
 
 import asyncio
+from typing import AsyncIterator
 from contextlib import suppress
 from decimal import Decimal, InvalidOperation
 from logging import getLogger
@@ -51,7 +52,7 @@ class LiquoriceQuoter:
         self.markets = markets
         self.signer = signer
 
-    async def rfq_stream(self):
+    async def rfq_stream(self) -> AsyncIterator[RFQMessage]:
         """Yield RFQs from the inbound queue."""
         while True:
             rfq = await self.in_rfqs.get()
