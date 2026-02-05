@@ -72,10 +72,11 @@ async def test_quoter_publish_price_levels():
 
     # Patch asyncio.sleep to break the loop or run once
     # We allow one iteration then raise CancelledError to stop the loop cleanly
-    with patch("asyncio.sleep", side_effect=asyncio.CancelledError):
+    with patch("app.quoter.quoter.asyncio.sleep", side_effect=asyncio.CancelledError):
         try:
             await quoter.publish_price_levels()
         except asyncio.CancelledError:
+            # Expected: we cancel the publish loop in tests to exit after one iteration.
             pass
 
     # Verify outputs
