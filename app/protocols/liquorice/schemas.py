@@ -299,12 +299,8 @@ class PriceLevelsMessage(BaseModel):
         extra="forbid",
     )
     chainId: Annotated[int, Field(description="Blockchain chain ID")]
-    baseToken: Annotated[
-        ChecksumAddress, Field(description="Address of the base token")
-    ]
-    quoteToken: Annotated[
-        ChecksumAddress, Field(description="Address of the quote token")
-    ]
+    baseToken: Annotated[ChecksumAddress, Field(description="Address of the base token")]
+    quoteToken: Annotated[ChecksumAddress, Field(description="Address of the quote token")]
     levels: Annotated[
         List[PriceLevelLite],
         Field(description="List of price levels"),

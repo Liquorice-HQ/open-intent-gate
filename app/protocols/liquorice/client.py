@@ -70,9 +70,9 @@ class LiquoriceClient:
                 log.error("Unexpected message type in out_quotes: %s", type(msg))
                 continue
 
-            raw_msg = LiquoriceEnvelope(
-                message=msg, messageType=msg_type
-            ).model_dump_json(exclude_none=True)
+            raw_msg = LiquoriceEnvelope(message=msg, messageType=msg_type).model_dump_json(
+                exclude_none=True
+            )
             await ws.send(raw_msg)
             log.debug("Sent: %s", raw_msg)
 
