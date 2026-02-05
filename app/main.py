@@ -50,7 +50,12 @@ async def lifespan(_app: FastAPI):
         liq_client.run()
     )  # long-lived coroutine for Liquorice client
     log.info("Starting Quoter service...")
-    quoter = LiquoriceQuoter(liq_client.out_rfqs, liq_client.in_quotes, markets, liquorice_signer)
+    quoter = LiquoriceQuoter(
+        liq_client.out_rfqs,
+        liq_client.in_quotes,
+        markets,
+        liquorice_signer,
+    )
     quoter_task = asyncio.create_task(quoter.run())  # long-lived coroutine for Quoter
     log.info("Intent gateway started successfully")
     try:
