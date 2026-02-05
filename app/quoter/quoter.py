@@ -300,8 +300,8 @@ class LiquoriceQuoter:
                                 level,
                             )
 
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                log.error("Unexpected error in publish_price_levels: %s", e)
+            except Exception:  # pylint: disable=broad-exception-caught
+                log.exception("Unexpected error in publish_price_levels")
 
             await asyncio.sleep(1)
 
