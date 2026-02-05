@@ -25,7 +25,7 @@ class LiquoriceClient:
     Relays RFQs and quotes between the queues and the WebSocket."""
 
     out_rfqs: asyncio.Queue[RFQMessage]
-    in_quotes: asyncio.Queue[PriceLevelsMessage]
+    in_quotes: asyncio.Queue[PriceLevelsMessage | RFQQuoteMessage]
 
     def __init__(self, cfg_maker: MakerConfig) -> None:
         self.out_rfqs = asyncio.Queue()
@@ -36,7 +36,7 @@ class LiquoriceClient:
             "authorization": cfg_maker.authorization,
         }
         self.out_rfqs: asyncio.Queue[RFQMessage] = asyncio.Queue()  # Queue for outgoing RFQs
-        self.in_quotes: asyncio.Queue[PriceLevelsMessage] = (
+        self.in_quotes: asyncio.Queue[PriceLevelsMessage | RFQQuoteMessage] = (
             asyncio.Queue()
         )  # Queue for incoming quotes / price levels
 

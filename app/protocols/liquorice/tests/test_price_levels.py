@@ -86,5 +86,5 @@ async def test_quoter_publish_price_levels():
 
     assert msg.baseToken == "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"
     assert msg.quoteToken == "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
-    assert msg.levels[0].price == "1"
+    assert msg.levels[0].price == "1.0"
     assert msg.levels[0].amount == "5.0"
