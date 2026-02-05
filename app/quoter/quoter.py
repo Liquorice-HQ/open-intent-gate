@@ -12,7 +12,12 @@ from web3.main import to_checksum_address
 from app.evm.const import ERC20_ZERO_ADDRESS as ZERO_ADDRESS
 from app.markets.markets import MarketState
 from app.metrics.metrics import metrics
-from app.protocols.liquorice.schemas import QuoteLevelLite, RFQMessage, RFQQuoteMessage
+from app.protocols.liquorice.schemas import (
+    PriceLevelLite,
+    PriceLevelsMessage,
+    RFQMessage,
+    RFQQuoteMessage,
+)
 from app.protocols.liquorice.signer import Web3Signer
 
 # Premium multiplier for stablecoin's default rate to force the quoter
@@ -28,103 +33,91 @@ class LiquoriceQuoter:
     and sends quotes back (if quoting conditions satisfy)"""
 
     in_rfqs: asyncio.Queue[RFQMessage]
-    out_quotes: asyncio.Queue[RFQQuoteMessage]
+    in_rfqs: asyncio.Queue[RFQMessage]
+    out_quotes: asyncio.Queue[PriceLevelsMessage]
     markets: MarketState
     signer: Web3Signer
 
     def __init__(
         self,
         in_rfqs: asyncio.Queue[RFQMessage],
-        out_quotes: asyncio.Queue[RFQQuoteMessage],
+        out_quotes: asyncio.Queue[PriceLevelsMessage],
         markets: MarketState,
         signer: Web3Signer,
     ) -> None:
+        self.in_rfqs = in_rfqs
         self.in_rfqs = in_rfqs
         self.out_quotes = out_quotes
         self.markets = markets
         self.signer = signer
 
-    async def rfq_stream(self) -> AsyncIterator[RFQMessage]:
-        """Stream RFQs from the input queue."""
+    async def publish_price_levels(self) -> None:
+        """Periodically publish price levels for supported token pairs."""
+        log.info("Starting to publish price levels")
         while True:
-            rfq = await self.in_rfqs.get()
             try:
-                yield rfq
-            finally:
-                self.in_rfqs.task_done()
+                # Supported chains are Arbitrum (42161) and Ethereum (1)
+                for chain_id in [42161, 1]:
+                    # We expect the graph to contain tokens for these chains
+                    # Iterate through all tokens to find quotes (tokens we hold)
+                    # For simplicty, looking for stablecoins: USDC, USDT
+                    # This logic assumes we want to trade stablecoins 1:1 on the same chain.
+                    
+                    tokens = list(self.markets.get_tokens_by_chain_id(chain_id))
+                    # Group by symbol or address to identify potential pairs
+                    # Logic: For each token Q (quote) we hold balance > 0:
+                    #   Find all other compatible tokens B (base) on the same chain.
+                    #   Publish PriceLevels for pair B/Q (Base=B, Quote=Q).
+                    
+                    # Optimization: Filter for stablecoins only as per requirements
+                    stablecoins = [
+                        t for t in tokens 
+                        if t.symbol in ["USDC", "USDT"] 
+                        # In a real app we might check contract address, but symbol is proxy here
+                    ]
+                    
+                    for quote_token in stablecoins:
+                        try:
+                            balance_raw = quote_token.balance
+                        except Exception:
+                            balance_raw = 0
+                            
+                        if balance_raw <= 0:
+                            continue
+                            
+                        # Convert balance to decimal string for the amount
+                        amount_str = str(quote_token.raw_to_decimal(balance_raw))
+                        
+                        for base_token in stablecoins:
+                            if base_token.address == quote_token.address:
+                                continue
+                                
+                            # Create and enqueue PriceLevelsMessage
+                            # Pair: Base (trader sells) -> Quote (trader buys / we sell)
+                            # We sell Quote token.
+                            
+                            level = PriceLevelLite(price="1", amount=amount_str)
+                            msg = PriceLevelsMessage(
+                                chainId=chain_id,
+                                baseToken=base_token.address,
+                                quoteToken=quote_token.address,
+                                levels=[level]
+                            )
+                            await self.out_quotes.put(msg)
+                            log.debug(
+                                "Published level for %s/%s on chain %s: %s",
+                                base_token.symbol,
+                                quote_token.symbol,
+                                chain_id,
+                                level
+                            )
+
+            except Exception as e:
+                log.error("Error publishing price levels: %s", e)
+            
+            await asyncio.sleep(1)
 
     async def run(self) -> None:
-        """Process RFQs from queue until cancelled."""
+        """Start the publisher loop."""
         with suppress(asyncio.CancelledError):
-            async for rfq in self.rfq_stream():
-                metrics_labels = {
-                    "chain_id": rfq.chainId,
-                    "solver": rfq.solver,
-                    "base_token": rfq.baseToken,
-                    "quote_token": rfq.quoteToken,
-                }
-                try:
-                    log.debug("Processing RFQ: %s", rfq)
-                    base_token = self.markets.get_token(rfq.baseToken, rfq.chainId)
-                    if not base_token:
-                        log.info(
-                            "BaseToken %s unsupported. Ignoring RFQ: %s", rfq.baseToken, rfq.rfqId
-                        )
-                        metrics.rfqs_total.labels(**metrics_labels, status="UNSUPPORTED_BT").inc()
-                        continue
-                    quote_token = self.markets.get_token(rfq.quoteToken, rfq.chainId)
-                    if not quote_token:
-                        log.info(
-                            "QuoteToken %s unsupported. Ignoring RFQ: %s",
-                            rfq.quoteToken,
-                            rfq.rfqId,
-                        )
-                        metrics.rfqs_total.labels(**metrics_labels, status="UNSUPPORTED_QT").inc()
-                        continue
-                    path = self.markets.shortest_path(base_token, quote_token)
-                    assert path, "No path found for RFQ"
-                    assert isinstance(rfq.baseTokenAmount, int)
-                    assert rfq.baseTokenAmount > 0
-                    receive_base_token_amount = base_token.raw_to_decimal(rfq.baseTokenAmount)
-                    send_quote_token_amount = min(
-                        receive_base_token_amount * QUOTE_PREMIUM, quote_token.balance
-                    )
-                    send_quote_token_raw_amount = quote_token.decimal_to_raw(
-                        send_quote_token_amount
-                    )
-                    if send_quote_token_amount == 0:
-                        log.info(
-                            "No quote tokens available for RFQ %s: %s",
-                            rfq.rfqId,
-                            rfq.quoteToken,
-                        )
-                        metrics.rfqs_total.labels(**metrics_labels, status="LOW_QT_BALANCE").inc()
-                        continue
-                    quote_lvl = QuoteLevelLite(
-                        baseToken=base_token.address,
-                        quoteToken=quote_token.address,
-                        baseTokenAmount=int(rfq.baseTokenAmount),
-                        quoteTokenAmount=send_quote_token_raw_amount,
-                        expiry=rfq.expiry + 30,
-                        settlementContract=to_checksum_address(ZERO_ADDRESS),
-                        minQuoteTokenAmount=1,
-                        signer=to_checksum_address(
-                            ZERO_ADDRESS
-                        ),  # Placeholder, will be set later by Web3 Signer
-                        recipient=to_checksum_address(ZERO_ADDRESS),  # Placeholder
-                        signature=HexBytes("00" * 65),  # Placeholder
-                    )
-                    non_signed_quote = RFQQuoteMessage(rfqId=rfq.rfqId, levels=[quote_lvl])
-                    signed_quote = self.signer.sign_quote_levels(rfq, non_signed_quote)
-                    if not signed_quote:
-                        log.error("Failed to sign quote for RFQ: %s", rfq.rfqId)
-                        continue
-                    log.info("Sending quote for RFQ %s: %s", rfq.rfqId, signed_quote)
-                    await self.out_quotes.put(signed_quote)
-                    metrics.rfqs_total.labels(**metrics_labels, status="QUOTE_SENT").inc()
-
-                except Exception as e:  # pylint: disable=broad-exception-caught
-                    log.error("Failed to process RFQ: %s", e)
-                    metrics.rfqs_total.labels(
-                        **metrics_labels, status="QUOTER_UNHANDLED_EXC"
-                    ).inc()
+             await self.publish_price_levels()

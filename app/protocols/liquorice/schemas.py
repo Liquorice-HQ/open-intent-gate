@@ -32,6 +32,7 @@ class MessageType(str, Enum):
     RFQ = "rfq"
     RFQ_QUOTE = "rfqQuote"
     CONNECTED = "connected"
+    PRICE_LEVELS = "priceLevels"
     UNKNOWN = "unknown"
 
 
@@ -277,7 +278,50 @@ class RFQQuoteMessage(BaseModel):
     levels: List[QuoteLevelLite]  # extend this if other level types are added
 
 
-T = TypeVar("T", RFQMessage, RFQQuoteMessage, EmptyMessage)
+class PriceLevelLite(BaseModel):
+    """A single price level with associated liquidity."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        arbitrary_types_allowed=True,
+        extra="forbid",
+    )
+    price: Annotated[str, Field(description="Price as a decimal string")]
+    amount: Annotated[str, Field(description="Amount of liquidity at this price")]
+
+
+class PriceLevelsMessage(BaseModel):
+    """Price levels for a token pair on a specific chain."""
+
+    model_config = ConfigDict(
+        frozen=True,
+        arbitrary_types_allowed=True,
+        extra="forbid",
+    )
+    chainId: Annotated[int, Field(description="Blockchain chain ID")]
+    baseToken: Annotated[
+        ChecksumAddress, Field(description="Address of the base token")
+    ]
+    quoteToken: Annotated[
+        ChecksumAddress, Field(description="Address of the quote token")
+    ]
+    levels: Annotated[
+        List[PriceLevelLite],
+        Field(description="List of price levels"),
+    ]
+
+    @field_validator("baseToken", "quoteToken")
+    @classmethod
+    def validate_and_convert_address(cls, v: str) -> ChecksumAddress:
+        """Convert and validate Ethereum address to checksum format."""
+        if not Web3.is_address(v):
+            raise ValueError("Bad Ethereum address")
+        if not Web3.is_checksum_address(v):
+            raise ValueError("Bad Ethereum checksum")
+        return Web3.to_checksum_address(v)
+
+
+T = TypeVar("T", RFQMessage, RFQQuoteMessage, PriceLevelsMessage, EmptyMessage)
 
 
 class LiquoriceEnvelope(BaseModel, Generic[T]):
@@ -296,6 +340,8 @@ class LiquoriceEnvelope(BaseModel, Generic[T]):
                 values["messageType"] = MessageType.RFQ
             elif isinstance(msg, RFQQuoteMessage):
                 values["messageType"] = MessageType.RFQ_QUOTE
+            elif isinstance(msg, PriceLevelsMessage):
+                values["messageType"] = MessageType.PRICE_LEVELS
         return values
 
     @model_validator(mode="after")
@@ -304,6 +350,7 @@ class LiquoriceEnvelope(BaseModel, Generic[T]):
             MessageType.RFQ: RFQMessage,
             MessageType.RFQ_QUOTE: RFQQuoteMessage,
             MessageType.CONNECTED: EmptyMessage,
+            MessageType.PRICE_LEVELS: PriceLevelsMessage,
         }
         expected_cls = msg_class_map.get(self.messageType)
         if expected_cls and not isinstance(self.message, expected_cls):
