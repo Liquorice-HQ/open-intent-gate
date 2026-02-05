@@ -1,10 +1,11 @@
 """A service to handle RFQs and send quotes"""
 
 import asyncio
-from typing import AsyncIterator
 from contextlib import suppress
+from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from logging import getLogger
+from typing import AsyncIterator
 
 from hexbytes import HexBytes
 from web3 import Web3
@@ -20,6 +21,7 @@ from app.protocols.liquorice.schemas import (
     RFQQuoteMessage,
 )
 from app.protocols.liquorice.signer import Web3Signer
+from app.schemas.token import ERC20Token
 
 SUPPORTED_CHAIN_IDS = (42161, 1)
 
@@ -27,8 +29,18 @@ SUPPORTED_CHAIN_IDS = (42161, 1)
 # to always quote slightly above 1:1 for testing purposes.
 # In real-world usage this should be adjusted based on market conditions.
 QUOTE_PREMIUM = Decimal("1.0")
+ZERO_ADDRESS = Web3.to_checksum_address(ERC20_ZERO_ADDRESS)
 
 log = getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _RfqContext:
+    rfq: RFQMessage
+    base_token: ERC20Token
+    quote_token: ERC20Token
+    metrics_labels: dict
+    price: Decimal
 
 
 class LiquoriceQuoter:
@@ -72,6 +84,92 @@ class LiquoriceQuoter:
 
         return price * QUOTE_PREMIUM
 
+    def _get_tokens(self, rfq: RFQMessage, metrics_labels: dict):
+        base_token = self.markets.get_token(rfq.baseToken, rfq.chainId)
+        if not base_token:
+            log.info(
+                "BaseToken %s unsupported. Ignoring RFQ: %s",
+                rfq.baseToken,
+                rfq.rfqId,
+            )
+            metrics.rfqs_total.labels(**metrics_labels, status="UNSUPPORTED_BT").inc()
+            return None
+
+        quote_token = self.markets.get_token(rfq.quoteToken, rfq.chainId)
+        if not quote_token:
+            log.info(
+                "QuoteToken %s unsupported. Ignoring RFQ: %s",
+                rfq.quoteToken,
+                rfq.rfqId,
+            )
+            metrics.rfqs_total.labels(**metrics_labels, status="UNSUPPORTED_QT").inc()
+            return None
+
+        return base_token, quote_token
+
+    def _rfq_amounts(self, ctx: _RfqContext) -> tuple[int, int] | None:
+        result: tuple[int, int] | None = None
+        if ctx.price <= 0:
+            log.info("No path found for RFQ %s", ctx.rfq.rfqId)
+            metrics.rfqs_total.labels(**ctx.metrics_labels, status="NO_PATH").inc()
+        elif ctx.rfq.baseTokenAmount is not None:
+            base_raw_amount = int(ctx.rfq.baseTokenAmount)
+            if base_raw_amount <= 0:
+                metrics.rfqs_total.labels(**ctx.metrics_labels, status="BAD_AMOUNT").inc()
+            else:
+                base_decimal = ctx.base_token.raw_to_decimal(base_raw_amount)
+                quote_decimal = base_decimal * ctx.price
+                if quote_decimal > ctx.quote_token.balance:
+                    log.info(
+                        "No quote tokens available for RFQ %s: %s",
+                        ctx.rfq.rfqId,
+                        ctx.rfq.quoteToken,
+                    )
+                    metrics.rfqs_total.labels(**ctx.metrics_labels, status="LOW_QT_BALANCE").inc()
+                else:
+                    quote_raw_amount = ctx.quote_token.decimal_to_raw(quote_decimal)
+                    result = (base_raw_amount, quote_raw_amount)
+        else:
+            quote_raw_amount = int(ctx.rfq.quoteTokenAmount or 0)
+            if quote_raw_amount <= 0:
+                metrics.rfqs_total.labels(**ctx.metrics_labels, status="BAD_AMOUNT").inc()
+            else:
+                quote_decimal = ctx.quote_token.raw_to_decimal(quote_raw_amount)
+                if quote_decimal > ctx.quote_token.balance:
+                    log.info(
+                        "No quote tokens available for RFQ %s: %s",
+                        ctx.rfq.rfqId,
+                        ctx.rfq.quoteToken,
+                    )
+                    metrics.rfqs_total.labels(**ctx.metrics_labels, status="LOW_QT_BALANCE").inc()
+                else:
+                    base_decimal = quote_decimal / ctx.price
+                    base_raw_amount = ctx.base_token.decimal_to_raw(base_decimal)
+                    result = (base_raw_amount, quote_raw_amount)
+
+        return result
+
+    def _build_signed_quote(
+        self,
+        ctx: _RfqContext,
+        base_raw_amount: int,
+        quote_raw_amount: int,
+    ) -> RFQQuoteMessage | None:
+        quote_lvl = QuoteLevelLite(
+            baseToken=ctx.base_token.address,
+            quoteToken=ctx.quote_token.address,
+            baseTokenAmount=int(base_raw_amount),
+            quoteTokenAmount=int(quote_raw_amount),
+            expiry=ctx.rfq.expiry + 30,
+            settlementContract=ZERO_ADDRESS,
+            minQuoteTokenAmount=1,
+            signer=ZERO_ADDRESS,
+            recipient=ZERO_ADDRESS,
+            signature=HexBytes("00" * 65),
+        )
+        non_signed_quote = RFQQuoteMessage(rfqId=ctx.rfq.rfqId, levels=[quote_lvl])
+        return self.signer.sign_quote_levels(ctx.rfq, non_signed_quote)
+
     async def process_rfqs(self) -> None:
         """Process RFQs from queue and send signed quotes."""
         log.info("Starting to process RFQs")
@@ -84,80 +182,25 @@ class LiquoriceQuoter:
             }
             try:
                 log.debug("Processing RFQ: %s", rfq)
-                base_token = self.markets.get_token(rfq.baseToken, rfq.chainId)
-                if not base_token:
-                    log.info(
-                        "BaseToken %s unsupported. Ignoring RFQ: %s",
-                        rfq.baseToken,
-                        rfq.rfqId,
-                    )
-                    metrics.rfqs_total.labels(**metrics_labels, status="UNSUPPORTED_BT").inc()
+                tokens = self._get_tokens(rfq, metrics_labels)
+                if not tokens:
                     continue
-
-                quote_token = self.markets.get_token(rfq.quoteToken, rfq.chainId)
-                if not quote_token:
-                    log.info(
-                        "QuoteToken %s unsupported. Ignoring RFQ: %s",
-                        rfq.quoteToken,
-                        rfq.rfqId,
-                    )
-                    metrics.rfqs_total.labels(**metrics_labels, status="UNSUPPORTED_QT").inc()
-                    continue
+                base_token, quote_token = tokens
 
                 price = self._pair_price(base_token, quote_token)
-                if price <= 0:
-                    log.info("No path found for RFQ %s", rfq.rfqId)
-                    metrics.rfqs_total.labels(**metrics_labels, status="NO_PATH").inc()
-                    continue
-
-                if rfq.baseTokenAmount is not None:
-                    base_raw_amount = int(rfq.baseTokenAmount)
-                    if base_raw_amount <= 0:
-                        metrics.rfqs_total.labels(**metrics_labels, status="BAD_AMOUNT").inc()
-                        continue
-                    base_decimal = base_token.raw_to_decimal(base_raw_amount)
-                    quote_decimal = base_decimal * price
-                    if quote_decimal > quote_token.balance:
-                        log.info(
-                            "No quote tokens available for RFQ %s: %s",
-                            rfq.rfqId,
-                            rfq.quoteToken,
-                        )
-                        metrics.rfqs_total.labels(**metrics_labels, status="LOW_QT_BALANCE").inc()
-                        continue
-                    quote_raw_amount = quote_token.decimal_to_raw(quote_decimal)
-                else:
-                    quote_raw_amount = int(rfq.quoteTokenAmount or 0)
-                    if quote_raw_amount <= 0:
-                        metrics.rfqs_total.labels(**metrics_labels, status="BAD_AMOUNT").inc()
-                        continue
-                    quote_decimal = quote_token.raw_to_decimal(quote_raw_amount)
-                    if quote_decimal > quote_token.balance:
-                        log.info(
-                            "No quote tokens available for RFQ %s: %s",
-                            rfq.rfqId,
-                            rfq.quoteToken,
-                        )
-                        metrics.rfqs_total.labels(**metrics_labels, status="LOW_QT_BALANCE").inc()
-                        continue
-                    base_decimal = quote_decimal / price
-                    base_raw_amount = base_token.decimal_to_raw(base_decimal)
-
-                zero_address = Web3.to_checksum_address(ERC20_ZERO_ADDRESS)
-                quote_lvl = QuoteLevelLite(
-                    baseToken=base_token.address,
-                    quoteToken=quote_token.address,
-                    baseTokenAmount=int(base_raw_amount),
-                    quoteTokenAmount=int(quote_raw_amount),
-                    expiry=rfq.expiry + 30,
-                    settlementContract=zero_address,
-                    minQuoteTokenAmount=1,
-                    signer=zero_address,
-                    recipient=zero_address,
-                    signature=HexBytes("00" * 65),
+                ctx = _RfqContext(
+                    rfq=rfq,
+                    base_token=base_token,
+                    quote_token=quote_token,
+                    metrics_labels=metrics_labels,
+                    price=price,
                 )
-                non_signed_quote = RFQQuoteMessage(rfqId=rfq.rfqId, levels=[quote_lvl])
-                signed_quote = self.signer.sign_quote_levels(rfq, non_signed_quote)
+                amounts = self._rfq_amounts(ctx)
+                if not amounts:
+                    continue
+                base_raw_amount, quote_raw_amount = amounts
+
+                signed_quote = self._build_signed_quote(ctx, base_raw_amount, quote_raw_amount)
                 if not signed_quote:
                     log.error("Failed to sign quote for RFQ: %s", rfq.rfqId)
                     metrics.rfqs_total.labels(**metrics_labels, status="SIGN_FAIL").inc()
