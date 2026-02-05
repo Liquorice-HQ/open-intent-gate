@@ -54,8 +54,7 @@ async def test_quoter_publish_price_levels():
     usdc_token = MagicMock()
     usdc_token.symbol = "USDC"
     usdc_token.address = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
-    usdc_token.balance = 5000000  # 5 USDC
-    usdc_token.raw_to_decimal.return_value = 5.0
+    usdc_token.balance = 5.0  # 5 USDC
 
     # Token 2: USDT (Base candidate)
     usdt_token = MagicMock()
