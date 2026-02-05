@@ -51,7 +51,14 @@ async def lifespan(_app: FastAPI):
         liq_client.run()
     )  # long-lived coroutine for Liquorice client
     log.info("Starting Quoter service...")
-    price_level_publish_interval = float(os.getenv("PRICE_LEVEL_PUBLISH_INTERVAL", "1.0"))
+    try:
+        price_level_publish_interval = float(os.getenv("PRICE_LEVEL_PUBLISH_INTERVAL", "1.0"))
+    except ValueError as e:
+        log.warning(
+            "Invalid PRICE_LEVEL_PUBLISH_INTERVAL value: %s. Using default of 1.0 seconds.",
+            os.getenv("PRICE_LEVEL_PUBLISH_INTERVAL"),
+        )
+        price_level_publish_interval = 1.0
     log.info("Price level publish interval: %s seconds", price_level_publish_interval)
     quoter = LiquoriceQuoter(
         liq_client.out_rfqs,
