@@ -93,6 +93,7 @@ async def test_quote_scaling_insufficient_liquidity(quoter, mock_market_state):
         try:
             await task
         except asyncio.CancelledError:
+            # Suppress the expected cancellation when stopping the background quoter task.
             pass
 
     level = quote.levels[0]
