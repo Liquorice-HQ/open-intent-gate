@@ -39,14 +39,14 @@ async def test_quote_scaling_insufficient_liquidity(quoter, mock_market_state):
     # Setup tokens
     base_token = Mock(spec=ERC20Token)
     base_token.address = "0xBase"
-    base_token.raw_to_decimal.side_effect = lambda x: Decimal(x)
-    base_token.decimal_to_raw.side_effect = lambda x: int(x)
+    base_token.raw_to_decimal.side_effect = Decimal
+    base_token.decimal_to_raw.side_effect = int
 
     quote_token = Mock(spec=ERC20Token)
     quote_token.address = "0xQuote"
     # Balance is only 50
     quote_token.balance = Decimal("50")
-    quote_token.decimal_to_raw.side_effect = lambda x: int(x)
+    quote_token.decimal_to_raw.side_effect = int
 
     rfq_base_amount = 1000
 
