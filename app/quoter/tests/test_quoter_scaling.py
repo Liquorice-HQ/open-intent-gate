@@ -98,13 +98,13 @@ async def test_quote_scaling_insufficient_liquidity(quoter, mock_market_state):
     level = quote.levels[0]
 
     # Assertions
-    # Because of the bug, baseTokenAmount will preserve 1000
-    # quoteTokenAmount will be 50.
+    # With only 50 quote tokens available, the quoter should scale the base amount
+    # so that the resulting quote respects available liquidity and the quote premium.
     assert level.quoteTokenAmount == 50
 
-    # This assertion is expected to FAIL until fixed
-    # The correct behavior should satisfy:
+    # The correct behavior should satisfy approximately:
     # baseTokenAmount * QUOTE_PREMIUM ~= quoteTokenAmount
+    # For this test setup with balance 50 and QUOTE_PREMIUM == 1.0:
     # 50 * 1.0 = 50.
 
     expected_base_amount = int(quote_token.balance / QUOTE_PREMIUM)
