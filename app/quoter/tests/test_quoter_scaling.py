@@ -97,8 +97,6 @@ async def test_quote_scaling_insufficient_liquidity(quoter, mock_market_state):
 
     level = quote.levels[0]
 
-    print(f"Base Amnt: {level.baseTokenAmount}, Quote Amnt: {level.quoteTokenAmount}")
-
     # Assertions
     # Because of the bug, baseTokenAmount will preserve 1000
     # quoteTokenAmount will be 50.
