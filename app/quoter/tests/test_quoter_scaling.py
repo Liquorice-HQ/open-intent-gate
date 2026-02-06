@@ -9,7 +9,11 @@ from web3.main import to_checksum_address
 
 from app.markets.markets import MarketState
 from app.protocols.liquorice.schemas import RFQMessage
-from app.quoter.quoter import QUOTE_PREMIUM, LiquoriceQuoter
+from app.quoter.quoter import (
+    QUOTE_PREMIUM,
+    LiquoriceQuoter,
+    scaled_base_token_raw_amount,
+)
 from app.schemas.token import ERC20Token
 
 
@@ -107,3 +111,21 @@ async def test_quote_scaling_insufficient_liquidity(quoter, mock_market_state):
 
     expected_base_amount = int(quote_token.balance / QUOTE_PREMIUM)
     assert level.baseTokenAmount == expected_base_amount
+
+
+def test_scaled_base_amount_non_stable_rate():
+    base_token_amount_decimal = Decimal("1")  # 1 WETH
+    market_quote_token_amount = Decimal("3000")  # 3000 USDT
+    send_quote_token_amount = Decimal("1500")  # 1500 USDT
+
+    def decimal_to_raw(value: Decimal) -> int:
+        return int(value * Decimal("1e18"))
+
+    scaled_raw = scaled_base_token_raw_amount(
+        base_token_amount_decimal,
+        market_quote_token_amount,
+        send_quote_token_amount,
+        decimal_to_raw,
+    )
+
+    assert scaled_raw == int(Decimal("0.5") * Decimal("1e18"))

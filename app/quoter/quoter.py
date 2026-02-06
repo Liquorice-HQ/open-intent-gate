@@ -4,7 +4,7 @@ import asyncio
 from contextlib import suppress
 from decimal import Decimal
 from logging import getLogger
-from typing import AsyncIterator
+from typing import AsyncIterator, Callable
 
 from hexbytes import HexBytes
 from web3.main import to_checksum_address
@@ -19,6 +19,19 @@ from app.protocols.liquorice.signer import Web3Signer
 # to always quote slightly above 1:1 for testing purposes.
 # In real-world usage this should be adjusted based on market conditions.
 QUOTE_PREMIUM = Decimal("1.0")
+
+
+def scaled_base_token_raw_amount(
+    base_token_amount_decimal: Decimal,
+    market_quote_token_amount: Decimal,
+    send_quote_token_amount: Decimal,
+    decimal_to_raw: Callable[[Decimal], int],
+) -> int:
+    """Scale base token amount proportionally to reduced quote amount."""
+    return decimal_to_raw(
+        base_token_amount_decimal * (send_quote_token_amount / market_quote_token_amount)
+    )
+
 
 log = getLogger(__name__)
 
@@ -85,9 +98,8 @@ class LiquoriceQuoter:
                     assert path, "No path found for RFQ"
                     assert isinstance(rfq.baseTokenAmount, int)
                     assert rfq.baseTokenAmount > 0
-                    market_quote_token_amount = (
-                        base_token.raw_to_decimal(rfq.baseTokenAmount) * QUOTE_PREMIUM
-                    )
+                    base_token_amount_decimal = base_token.raw_to_decimal(rfq.baseTokenAmount)
+                    market_quote_token_amount = base_token_amount_decimal * QUOTE_PREMIUM
                     send_quote_token_amount = min(market_quote_token_amount, quote_token.balance)
                     send_quote_token_raw_amount = quote_token.decimal_to_raw(
                         send_quote_token_amount
@@ -105,8 +117,11 @@ class LiquoriceQuoter:
                     quoted_base_token_raw_amount = int(rfq.baseTokenAmount)
                     if send_quote_token_amount < market_quote_token_amount:
                         # Re-calculate how much base token corresponds to the reduced quote amount
-                        quoted_base_token_raw_amount = base_token.decimal_to_raw(
-                            send_quote_token_amount / QUOTE_PREMIUM
+                        quoted_base_token_raw_amount = scaled_base_token_raw_amount(
+                            base_token_amount_decimal,
+                            market_quote_token_amount,
+                            send_quote_token_amount,
+                            base_token.decimal_to_raw,
                         )
 
                     quote_lvl = QuoteLevelLite(
