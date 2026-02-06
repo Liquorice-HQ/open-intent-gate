@@ -260,7 +260,7 @@ class LiquoriceQuoter:
                 log.info("Sending quote for RFQ %s: %s", rfq.rfqId, signed_quote)
                 await self.out_quotes.put(signed_quote)
                 metrics.rfqs_total.labels(**metrics_labels, status="QUOTE_SENT").inc()
-            except Exception:
+            except Exception:  # pylint: disable=broad-exception-caught
                 log.exception("Failed to process RFQ: %s", rfq.rfqId)
                 metrics.rfqs_total.labels(**metrics_labels, status="ERROR").inc()
             finally:
