@@ -19,6 +19,7 @@ from app.markets.markets import MarketState
 from app.metrics.health import CounterHealthChecker, HealthService
 from app.metrics.metrics import metrics, metrics_router
 from app.protocols.liquorice.client import LiquoriceClient
+from app.protocols.liquorice.price_levels import LiquoricePriceLevelPublisher
 from app.protocols.liquorice.signer import Web3Signer
 from app.quoter.quoter import LiquoriceQuoter
 
@@ -49,9 +50,9 @@ async def lifespan(_app: FastAPI):
     liquorice_client_task = asyncio.create_task(
         liq_client.run()
     )  # long-lived coroutine for Liquorice client
-    
+
     log.info("Starting Price Level Publisher...")
-    from app.protocols.liquorice.price_levels import LiquoricePriceLevelPublisher
+
     publisher = LiquoricePriceLevelPublisher(
         liq_client.in_quotes,
         markets,

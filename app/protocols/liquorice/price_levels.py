@@ -11,8 +11,8 @@ from app.protocols.liquorice.const import QUOTE_PREMIUM
 from app.protocols.liquorice.schemas import (
     PriceLevelLite,
     PriceLevelsMessage,
+    RFQQuoteMessage,
 )
-from app.protocols.liquorice.client import LiquoriceClient
 
 log = logging.getLogger(__name__)
 
@@ -22,13 +22,13 @@ SUPPORTED_CHAIN_IDS = (42161, 1)
 class LiquoricePriceLevelPublisher:
     """Service that periodically publishes price levels for supported token pairs."""
 
-    out_quotes: asyncio.Queue[PriceLevelsMessage]
+    out_quotes: asyncio.Queue[PriceLevelsMessage | RFQQuoteMessage]
     markets: MarketState
     price_level_publish_interval: float
 
     def __init__(
         self,
-        out_quotes: asyncio.Queue[PriceLevelsMessage],
+        out_quotes: asyncio.Queue[PriceLevelsMessage | RFQQuoteMessage],
         markets: MarketState,
     ) -> None:
         self.out_quotes = out_quotes

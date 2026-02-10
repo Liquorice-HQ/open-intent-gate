@@ -1,10 +1,8 @@
 """A service to handle RFQs and send quotes"""
 
 import asyncio
-import os
-from contextlib import suppress
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from logging import getLogger
 from typing import AsyncIterator, Callable
 
@@ -14,8 +12,12 @@ from web3 import Web3
 from app.evm.const import ERC20_ZERO_ADDRESS
 from app.markets.markets import MarketState
 from app.metrics.metrics import metrics
+
+# Premium multiplier for stablecoin's default rate to force the quoter
+# to always quote slightly above 1:1 for testing purposes.
+# In real-world usage this should be adjusted based on market conditions.
+from app.protocols.liquorice.const import QUOTE_PREMIUM
 from app.protocols.liquorice.schemas import (
-    PriceLevelLite,
     PriceLevelsMessage,
     QuoteLevelLite,
     RFQMessage,
@@ -23,13 +25,6 @@ from app.protocols.liquorice.schemas import (
 )
 from app.protocols.liquorice.signer import Web3Signer
 from app.schemas.token import ERC20Token
-
-from app.schemas.token import ERC20Token
-
-# Premium multiplier for stablecoin's default rate to force the quoter
-# to always quote slightly above 1:1 for testing purposes.
-# In real-world usage this should be adjusted based on market conditions.
-from app.protocols.liquorice.const import QUOTE_PREMIUM
 
 ZERO_ADDRESS = Web3.to_checksum_address(ERC20_ZERO_ADDRESS)
 
