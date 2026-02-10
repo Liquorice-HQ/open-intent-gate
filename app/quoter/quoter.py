@@ -24,12 +24,13 @@ from app.protocols.liquorice.schemas import (
 from app.protocols.liquorice.signer import Web3Signer
 from app.schemas.token import ERC20Token
 
-SUPPORTED_CHAIN_IDS = (42161, 1)
+from app.schemas.token import ERC20Token
 
 # Premium multiplier for stablecoin's default rate to force the quoter
 # to always quote slightly above 1:1 for testing purposes.
 # In real-world usage this should be adjusted based on market conditions.
-QUOTE_PREMIUM = Decimal("1.0")
+from app.protocols.liquorice.const import QUOTE_PREMIUM
+
 ZERO_ADDRESS = Web3.to_checksum_address(ERC20_ZERO_ADDRESS)
 
 
@@ -65,7 +66,6 @@ class LiquoriceQuoter:
     out_quotes: asyncio.Queue[PriceLevelsMessage | RFQQuoteMessage]
     markets: MarketState
     signer: Web3Signer
-    price_level_publish_interval: float
 
     def __init__(
         self,
@@ -78,21 +78,6 @@ class LiquoriceQuoter:
         self.out_quotes = out_quotes
         self.markets = markets
         self.signer = signer
-        self.price_level_publish_interval = self._get_price_level_publish_interval()
-
-    @staticmethod
-    def _get_price_level_publish_interval() -> float:
-        try:
-            interval = float(os.getenv("PRICE_LEVEL_PUBLISH_INTERVAL", "1.0"))
-        except ValueError:
-            log.warning(
-                "Invalid PRICE_LEVEL_PUBLISH_INTERVAL value: %s. Using default of 1.0 seconds.",
-                os.getenv("PRICE_LEVEL_PUBLISH_INTERVAL"),
-            )
-            interval = 1.0
-
-        log.info("Price level publish interval: %s seconds", interval)
-        return interval
 
     async def rfq_stream(self) -> AsyncIterator[RFQMessage]:
         """Yield RFQs from the inbound queue."""
@@ -265,98 +250,3 @@ class LiquoriceQuoter:
                 metrics.rfqs_total.labels(**metrics_labels, status="ERROR").inc()
             finally:
                 self.in_rfqs.task_done()
-
-    async def publish_price_levels(self) -> None:
-        """Periodically publish price levels for supported token pairs."""
-        log.info("Starting to publish price levels")
-        while True:
-            try:
-                for chain_id in SUPPORTED_CHAIN_IDS:
-                    tokens = list(self.markets.get_tokens_by_chain_id(chain_id))
-                    # Group by symbol or address to identify potential pairs
-                    # Logic: For each token Q (quote) we hold balance > 0:
-                    #   Find all other compatible tokens B (base) on the same chain.
-                    #   Publish PriceLevels for pair B/Q (Base=B, Quote=Q).
-
-                    # Optimization: Filter for stablecoins only as per requirements
-                    stablecoins = [
-                        t
-                        for t in tokens
-                        if t.symbol in ["USDC", "USDT"]
-                        # In a real app we might check contract address, but symbol is proxy here
-                    ]
-
-                    for quote_token in stablecoins:
-                        try:
-                            balance_decimal = quote_token.balance
-                        except AttributeError as err:
-                            log.warning(
-                                "Token %s missing decimals or balance on chain %s: %s",
-                                quote_token.symbol,
-                                chain_id,
-                                err,
-                            )
-                            continue
-
-                        if balance_decimal <= 0:
-                            continue
-
-                        try:
-                            amount_str = str(balance_decimal)
-                        except (InvalidOperation, TypeError, ValueError) as err:
-                            log.error(
-                                "Unable to convert balance for %s on chain %s: %s",
-                                quote_token.symbol,
-                                chain_id,
-                                err,
-                            )
-                            continue
-
-                        for base_token in stablecoins:
-                            if base_token.address == quote_token.address:
-                                continue
-
-                            # Create and enqueue PriceLevelsMessage
-                            # Pair: Base (trader sells) -> Quote (trader buys / we sell)
-                            # We sell Quote token.
-
-                            price = self._pair_price(base_token, quote_token)
-                            if price <= 0:
-                                continue
-
-                            try:
-                                level = PriceLevelLite(price=str(price), amount=amount_str)
-                                msg = PriceLevelsMessage(
-                                    chainId=chain_id,
-                                    baseToken=base_token.address,
-                                    quoteToken=quote_token.address,
-                                    levels=[level],
-                                )
-                            except ValueError as err:
-                                log.error(
-                                    "Invalid price level for %s/%s on chain %s: %s",
-                                    base_token.symbol,
-                                    quote_token.symbol,
-                                    chain_id,
-                                    err,
-                                )
-                                continue
-
-                            await self.out_quotes.put(msg)
-                            log.debug(
-                                "Published level for %s/%s on chain %s: %s",
-                                base_token.symbol,
-                                quote_token.symbol,
-                                chain_id,
-                                level,
-                            )
-
-            except Exception:  # pylint: disable=broad-exception-caught
-                log.exception("Unexpected error in publish_price_levels")
-
-            await asyncio.sleep(self.price_level_publish_interval)
-
-    async def run(self) -> None:
-        """Start RFQ processing and price level publishing."""
-        with suppress(asyncio.CancelledError):
-            await asyncio.gather(self.process_rfqs(), self.publish_price_levels())

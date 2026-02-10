@@ -10,7 +10,7 @@ from app.protocols.liquorice.schemas import (
     PriceLevelLite,
     PriceLevelsMessage,
 )
-from app.quoter.quoter import LiquoriceQuoter
+from app.protocols.liquorice.price_levels import LiquoricePriceLevelPublisher
 
 
 @pytest.mark.asyncio
@@ -40,14 +40,12 @@ async def test_price_levels_schema():
 
 
 @pytest.mark.asyncio
-async def test_quoter_publish_price_levels():
-    """Test that LiquoriceQuoter publishes price levels periodically."""
-    in_rfqs_q = asyncio.Queue()
+async def test_publisher_publish_price_levels():
+    """Test that LiquoricePriceLevelPublisher publishes price levels periodically."""
     out_quotes_q = asyncio.Queue()
     markets_mock = MagicMock()
-    signer_mock = MagicMock()
 
-    quoter = LiquoriceQuoter(in_rfqs_q, out_quotes_q, markets_mock, signer_mock)
+    publisher = LiquoricePriceLevelPublisher(out_quotes_q, markets_mock)
 
     # Mock tokens
     # Token 1: USDC (Quote that we hold)
@@ -72,9 +70,9 @@ async def test_quoter_publish_price_levels():
 
     # Patch asyncio.sleep to break the loop or run once
     # We allow one iteration then raise CancelledError to stop the loop cleanly
-    with patch("app.quoter.quoter.asyncio.sleep", side_effect=asyncio.CancelledError):
+    with patch("app.protocols.liquorice.price_levels.asyncio.sleep", side_effect=asyncio.CancelledError):
         try:
-            await quoter.publish_price_levels()
+            await publisher.publish_price_levels()
         except asyncio.CancelledError:
             # Expected: we cancel the publish loop in tests to exit after one iteration.
             pass
