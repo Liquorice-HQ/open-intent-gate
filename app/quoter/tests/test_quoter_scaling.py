@@ -20,6 +20,7 @@ from app.schemas.token import ERC20Token
 @pytest.fixture
 def mock_market_state():
     ms = Mock(spec=MarketState)
+    ms.graph = Mock()
     return ms
 
 
@@ -62,6 +63,8 @@ async def test_quote_scaling_insufficient_liquidity(quoter, mock_market_state):
     mock_market_state.get_token.side_effect = lambda addr, chain: (
         base_token if addr == base_token_addr else quote_token
     )
+    mock_market_state.shortest_path.return_value = [base_token, quote_token]
+    mock_market_state.graph.get_edge_data.return_value = {"weight": 1.0}
 
     rfq = RFQMessage(
         chainId=1,
@@ -79,11 +82,8 @@ async def test_quote_scaling_insufficient_liquidity(quoter, mock_market_state):
 
     await quoter.in_rfqs.put(rfq)
 
-    # Execute one pass of the quoter loop logic
-    # We can invoke run but cancel it, or just replicate the logic.
-    # Invoking run is better for integration testing logic.
-
-    task = asyncio.create_task(quoter.run())
+    # Execute one pass of RFQ processing logic only.
+    task = asyncio.create_task(quoter.process_rfqs())
 
     try:
         # Wait for quote

@@ -7,7 +7,14 @@ from websockets.asyncio.client import ClientConnection
 
 from app.config.maker import MakerConfig
 
-from .schemas import LiquoriceEnvelope, MessageType, RFQMessage, RFQQuoteMessage
+from .schemas import (
+    ErrorMessage,
+    LiquoriceEnvelope,
+    MessageType,
+    PriceLevelsMessage,
+    RFQMessage,
+    RFQQuoteMessage,
+)
 
 LIQUORICE_WS_URL = "wss://api.liquorice.tech/v1/maker/ws"
 
@@ -19,20 +26,18 @@ class LiquoriceClient:
     Relays RFQs and quotes between the queues and the WebSocket."""
 
     out_rfqs: asyncio.Queue[RFQMessage]
-    in_quotes: asyncio.Queue[RFQQuoteMessage]
+    in_quotes: asyncio.Queue[PriceLevelsMessage | RFQQuoteMessage]
 
     def __init__(self, cfg_maker: MakerConfig) -> None:
-        self.out_rfqs = asyncio.Queue()
-        self.in_quotes = asyncio.Queue()
         self.uri = LIQUORICE_WS_URL
         self.headers = {
             "maker": cfg_maker.maker,
             "authorization": cfg_maker.authorization,
         }
         self.out_rfqs: asyncio.Queue[RFQMessage] = asyncio.Queue()  # Queue for outgoing RFQs
-        self.in_quotes: asyncio.Queue[RFQQuoteMessage] = (
+        self.in_quotes: asyncio.Queue[PriceLevelsMessage | RFQQuoteMessage] = (
             asyncio.Queue()
-        )  # Queue for incoming quotes
+        )  # Queue for incoming quotes / price levels
 
     async def _reader(self, ws: ClientConnection) -> None:
         """Reads messages from the WebSocket and puts them into the rfqs queue."""
@@ -46,6 +51,15 @@ class LiquoriceClient:
                 elif rfq.messageType == MessageType.RFQ:
                     log.debug("Message type RFQ received, processing")
                     await self.out_rfqs.put(rfq.message)
+                elif rfq.messageType == MessageType.ERROR:
+                    if isinstance(rfq.message, ErrorMessage):
+                        log.error(
+                            "Liquorice Error: %s - %s",
+                            rfq.message.type,
+                            rfq.message.message,
+                        )
+                    else:
+                        log.error("Liquorice Error with unexpected payload: %s", rfq.message)
                 else:
                     log.warning("Unexpected message type Rcvd: %s", rfq.messageType)
             except ValidationError as e:
@@ -55,11 +69,18 @@ class LiquoriceClient:
     async def _writer(self, ws: ClientConnection) -> None:
         """Reads quote from the quotes queue and sends them over the WebSocket."""
         while True:
-            quote_msg = await self.in_quotes.get()
-            assert isinstance(quote_msg, RFQQuoteMessage), "Expected RFQQuoteMessage"
-            raw_msg = LiquoriceEnvelope(
-                message=quote_msg, messageType=MessageType.RFQ_QUOTE
-            ).model_dump_json(exclude_none=True)
+            msg = await self.in_quotes.get()
+            if isinstance(msg, RFQQuoteMessage):
+                raw_msg = LiquoriceEnvelope(
+                    message=msg, messageType=MessageType.RFQ_QUOTE
+                ).model_dump_json(exclude_none=True)
+            elif isinstance(msg, PriceLevelsMessage):
+                raw_msg = LiquoriceEnvelope(
+                    message=msg, messageType=MessageType.PRICE_LEVELS
+                ).model_dump_json(exclude_none=True)
+            else:
+                log.error("Unexpected message type in out_quotes: %s", type(msg))
+                continue
             await ws.send(raw_msg)
             log.debug("Sent: %s", raw_msg)
 

@@ -19,6 +19,7 @@ from app.markets.markets import MarketState
 from app.metrics.health import CounterHealthChecker, HealthService
 from app.metrics.metrics import metrics, metrics_router
 from app.protocols.liquorice.client import LiquoriceClient
+from app.protocols.liquorice.price_levels import LiquoricePriceLevelPublisher
 from app.protocols.liquorice.signer import Web3Signer
 from app.quoter.quoter import LiquoriceQuoter
 
@@ -49,9 +50,23 @@ async def lifespan(_app: FastAPI):
     liquorice_client_task = asyncio.create_task(
         liq_client.run()
     )  # long-lived coroutine for Liquorice client
+
+    log.info("Starting Price Level Publisher...")
+
+    publisher = LiquoricePriceLevelPublisher(
+        liq_client.in_quotes,
+        markets,
+    )
+    publisher_task = asyncio.create_task(publisher.run())
+
     log.info("Starting Quoter service...")
-    quoter = LiquoriceQuoter(liq_client.out_rfqs, liq_client.in_quotes, markets, liquorice_signer)
-    quoter_task = asyncio.create_task(quoter.run())  # long-lived coroutine for Quoter
+    quoter = LiquoriceQuoter(
+        liq_client.out_rfqs,
+        liq_client.in_quotes,
+        markets,
+        liquorice_signer,
+    )
+    quoter_task = asyncio.create_task(quoter.process_rfqs())  # long-lived coroutine for Quoter
     log.info("Intent gateway started successfully")
     try:
         yield
@@ -60,10 +75,12 @@ async def lifespan(_app: FastAPI):
         await cs_mgr.shutdown()  # graceful stop
         chain_svc_mgr_task.cancel()
         liquorice_client_task.cancel()
+        publisher_task.cancel()
         quoter_task.cancel()
         try:
             await chain_svc_mgr_task
             await liquorice_client_task
+            await publisher_task
             await quoter_task
         except asyncio.CancelledError:
             pass
