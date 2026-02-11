@@ -8,6 +8,7 @@ from websockets.asyncio.client import ClientConnection
 from app.config.maker import MakerConfig
 
 from .schemas import (
+    ErrorMessage,
     LiquoriceEnvelope,
     MessageType,
     PriceLevelsMessage,
@@ -51,7 +52,14 @@ class LiquoriceClient:
                     log.debug("Message type RFQ received, processing")
                     await self.out_rfqs.put(rfq.message)
                 elif rfq.messageType == MessageType.ERROR:
-                    log.error("Liquorice Error: %s - %s", rfq.message.type, rfq.message.message)
+                    if isinstance(rfq.message, ErrorMessage):
+                        log.error(
+                            "Liquorice Error: %s - %s",
+                            rfq.message.type,
+                            rfq.message.message,
+                        )
+                    else:
+                        log.error("Liquorice Error with unexpected payload: %s", rfq.message)
                 else:
                     log.warning("Unexpected message type Rcvd: %s", rfq.messageType)
             except ValidationError as e:
