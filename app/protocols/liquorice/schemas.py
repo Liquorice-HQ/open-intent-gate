@@ -21,6 +21,7 @@ from pydantic import (
     Field,
     field_serializer,
     field_validator,
+    model_serializer,
     model_validator,
 )
 from web3 import Web3
@@ -33,6 +34,7 @@ class MessageType(str, Enum):
     RFQ_QUOTE = "rfqQuote"
     CONNECTED = "connected"
     PRICE_LEVELS = "priceLevels"
+    ERROR = "error"
     UNKNOWN = "unknown"
 
 
@@ -54,6 +56,12 @@ class IntentMetadata(BaseModel):
 
 class EmptyMessage(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
+
+
+class ErrorMessage(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    type: str
+    message: str
 
 
 class RFQMessage(BaseModel):
@@ -289,6 +297,10 @@ class PriceLevelLite(BaseModel):
     price: Annotated[str, Field(description="Price as a decimal string")]
     amount: Annotated[str, Field(description="Amount of liquidity at this price")]
 
+    @model_serializer
+    def ser_model(self) -> List[str]:
+        return [self.price, self.amount]
+
 
 class PriceLevelsMessage(BaseModel):
     """Price levels for a token pair on a specific chain."""
@@ -317,7 +329,7 @@ class PriceLevelsMessage(BaseModel):
         return Web3.to_checksum_address(v)
 
 
-T = TypeVar("T", RFQMessage, RFQQuoteMessage, PriceLevelsMessage, EmptyMessage)
+T = TypeVar("T", RFQMessage, RFQQuoteMessage, PriceLevelsMessage, EmptyMessage, ErrorMessage)
 
 
 class LiquoriceEnvelope(BaseModel, Generic[T]):
@@ -338,6 +350,8 @@ class LiquoriceEnvelope(BaseModel, Generic[T]):
                 values["messageType"] = MessageType.RFQ_QUOTE
             elif isinstance(msg, PriceLevelsMessage):
                 values["messageType"] = MessageType.PRICE_LEVELS
+            elif isinstance(msg, ErrorMessage):
+                values["messageType"] = MessageType.ERROR
         return values
 
     @model_validator(mode="after")
@@ -347,6 +361,7 @@ class LiquoriceEnvelope(BaseModel, Generic[T]):
             MessageType.RFQ_QUOTE: RFQQuoteMessage,
             MessageType.CONNECTED: EmptyMessage,
             MessageType.PRICE_LEVELS: PriceLevelsMessage,
+            MessageType.ERROR: ErrorMessage,
         }
         expected_cls = msg_class_map.get(self.messageType)
         if expected_cls and not isinstance(self.message, expected_cls):

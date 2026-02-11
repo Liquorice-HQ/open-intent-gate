@@ -50,6 +50,8 @@ class LiquoriceClient:
                 elif rfq.messageType == MessageType.RFQ:
                     log.debug("Message type RFQ received, processing")
                     await self.out_rfqs.put(rfq.message)
+                elif rfq.messageType == MessageType.ERROR:
+                    log.error("Liquorice Error: %s - %s", rfq.message.type, rfq.message.message)
                 else:
                     log.warning("Unexpected message type Rcvd: %s", rfq.messageType)
             except ValidationError as e:
