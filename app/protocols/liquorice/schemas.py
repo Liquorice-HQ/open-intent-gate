@@ -62,6 +62,7 @@ class ErrorMessage(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     type: str
     message: str
+    metadata: Optional[Dict[str, str]] = None
 
 
 class RFQMessage(BaseModel):

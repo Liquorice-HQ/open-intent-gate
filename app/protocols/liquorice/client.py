@@ -62,8 +62,17 @@ class LiquoriceClient:
                         log.error("Liquorice Error with unexpected payload: %s", rfq.message)
                 else:
                     log.warning("Unexpected message type Rcvd: %s", rfq.messageType)
-            except ValidationError as e:
-                log.error("Validation error: %s", e)
+            except ValidationError:
+                try:
+                    err = ErrorMessage.model_validate_json(message)
+                    log.error(
+                        "Liquorice Error: %s - %s (metadata: %s)",
+                        err.type,
+                        err.message,
+                        err.metadata,
+                    )
+                except ValidationError as e:
+                    log.error("Validation error: %s", e)
                 continue
 
     async def _writer(self, ws: ClientConnection) -> None:
